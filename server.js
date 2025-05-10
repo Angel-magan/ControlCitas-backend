@@ -1,7 +1,9 @@
 require("dotenv").config(); //Cargar variables d entorno
 const express = require("express"); //Crear servidor web
 const cors = require("cors"); //Para permitir solicitudes desde otro dominio
+
 const db = require("./config/db");
+const userRoutes = require("./routes/userRoutes");
 
 const app = express(); //Instancia del servidor
 app.use(cors()); //Evitar errores al consumir en React
@@ -22,3 +24,4 @@ app.listen(PORT, () => {
 });
 
 // Rutas
+app.use("/api/usuarios", userRoutes); //Ruta para el registro de usuarios
