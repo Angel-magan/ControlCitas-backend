@@ -4,6 +4,9 @@ const cors = require("cors"); //Para permitir solicitudes desde otro dominio
 
 const db = require("./config/db");
 const userRoutes = require("./routes/userRoutes");
+const pacienteRoutes = require("./routes/pacienteRoutes");
+const adminRoutes = require("./routes/adminRoutes");
+const medicoRoutes = require("./routes/medicoRoutes"); // <-- NUEVO
 
 const app = express(); //Instancia del servidor
 app.use(cors()); //Evitar errores al consumir en React
@@ -25,3 +28,6 @@ app.listen(PORT, () => {
 
 // Rutas
 app.use("/api/usuarios", userRoutes); //Ruta para el registro de usuarios
+app.use("/api/pacientes", pacienteRoutes); //Ruta para el registro de usuarios
+app.use("/api/admin", adminRoutes); //Ruta para administración
+app.use("/api/medico", medicoRoutes); // <-- NUEVO
