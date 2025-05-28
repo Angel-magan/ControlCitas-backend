@@ -1,9 +1,9 @@
 const db = require("../config/db");
 const bcrypt = require("bcryptjs"); // Al inicio del archivo
 const nodemailer = require("nodemailer"); // Agrega esto al inicio del archivo
-const frontendHost = process.env.FRONTEND_HOST || "localhost";
-const frontendPort = process.env.FRONTEND_PORT || "5173";
-const frontendUrl = `http://${frontendHost}:${frontendPort}/`;
+const frontendHost = process.env.DB_HOST || "localhost";
+const frontendPort = process.env.PORT || "5173";
+const frontendUrl = `http://${frontendHost}:${frontendPort}/`; //Url para el login del correo
 
 // Listar todos los usuarios
 exports.getUsuarios = (req, res) => {
