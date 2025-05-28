@@ -12,13 +12,13 @@ const app = express(); //Instancia del servidor
 app.use(cors()); //Evitar errores al consumir en React
 app.use(express.json()); //Recibir los datos en JSON
 
-db.connect((err) => {
-  if (err) {
-    console.error("Error conectando a la base de datos:", err);
-    process.exit(1); // Sale de la aplicación en caso de error
-  }
-  console.log("Conectado a la base de datos MySQL");
-});
+// db.connect((err) => {
+//   if (err) {
+//     console.error("Error conectando a la base de datos:", err);
+//     process.exit(1); // Sale de la aplicación en caso de error
+//   }
+//   console.log("Conectado a la base de datos MySQL");
+// });
 
 // Iniciar servidor
 const PORT = process.env.PORT || 5000;

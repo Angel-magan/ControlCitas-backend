@@ -12,28 +12,20 @@
 
 const mysql = require("mysql2");
 
-let connection;
+const connection = mysql.createConnection({
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+  port: process.env.DB_PORT || 3305,
+});
 
-function connectWithRetry() {
-  connection = mysql.createConnection({
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-    port: process.env.DB_PORT,
-  });
-
-  connection.connect((err) => {
-    if (err) {
-      console.error("Error al conectar a MySQL:", err.message);
-      console.log("Reintentando conexión en 5 segundos...");
-      setTimeout(connectWithRetry, 5000); // Espera 5s y reintenta
-    } else {
-      console.log("✅ Conectado a la base de datos MySQL");
-    }
-  });
-}
-
-connectWithRetry();
+connection.connect((err) => {
+  if (err) {
+    console.error("❌ Error conectando a MySQL:", err.message);
+    process.exit(1); // Sale para que Railway lo reinicie
+  }
+  console.log("✅ Conectado a la base de datos MySQL");
+});
 
 module.exports = connection;
