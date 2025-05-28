@@ -21,7 +21,7 @@ app.use(express.json()); //Recibir los datos en JSON
 // });
 
 // Iniciar servidor
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`Servidor backend corriendo en el puerto ${PORT}`);
 });
