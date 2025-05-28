@@ -1,6 +1,9 @@
 const db = require("../config/db");
 const bcrypt = require("bcryptjs"); // Al inicio del archivo
 const nodemailer = require("nodemailer"); // Agrega esto al inicio del archivo
+const frontendHost = process.env.DB_HOST || "localhost";
+const frontendPort = process.env.PORT || "5173";
+const frontendUrl = `http://${frontendHost}:${frontendPort}/`; //Url para el login del correo
 
 // Listar todos los usuarios
 exports.getUsuarios = (req, res) => {
@@ -243,6 +246,18 @@ exports.registrarMedico = async (req, res) => {
         return res.status(400).json({ message: "Correo inválido" });
     }
 
+    // Validar formato DUI
+    const duiRegex = /^\d{8}-\d{1}$/;
+    if (!duiRegex.test(num_identificacion)) {
+        return res.status(400).json({ message: "DUI inválido. Formato: 00000000-1" });
+    }
+
+    // Validar formato licencia médica
+    const licenciaRegex = /^J\.V\.P\.M-\d{5}$/;
+    if (!licenciaRegex.test(licencia_medica)) {
+        return res.status(400).json({ message: "Licencia médica inválida. Formato: J.V.P.M-00000" });
+    }
+
     // Validar correo único
     db.query("SELECT * FROM usuario WHERE correo = ?", [correo], async (err, results) => {
         if (err) return res.status(500).json({ message: "Error en la base de datos" });
@@ -250,92 +265,108 @@ exports.registrarMedico = async (req, res) => {
             return res.status(400).json({ message: "El correo ya está registrado" });
         }
 
-        // Generar contraseña aleatoria segura
-        const randomPassword = generarPasswordSeguro(15);
-        const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/;
-        if (!passwordRegex.test(randomPassword)) {
-            return res.status(500).json({ message: "Error generando contraseña segura" });
-        }
-
-        // Encriptar contraseña
-        const hashedPassword = await bcrypt.hash(randomPassword, 10);
-
-        // Insertar en usuario
+        // Validar DUI y licencia médica únicos
         db.query(
-            "INSERT INTO usuario (nombres, apellidos, direccion, telefono, correo, contrasena, sexo, rol) VALUES (?, ?, ?, ?, ?, ?, ?, 'medico')",
-            [nombres, apellidos, direccion, telefono, correo, hashedPassword, sexo],
-            (err, result) => {
-                if (err) return res.status(500).json({ message: "Error al crear usuario" });
+            "SELECT * FROM medico WHERE num_identificacion = ? OR licencia_medica = ?",
+            [num_identificacion, licencia_medica],
+            async (err2, results2) => {
+                if (err2) return res.status(500).json({ message: "Error en la base de datos" });
+                if (results2.length > 0) {
+                    if (results2.some(m => m.num_identificacion === num_identificacion)) {
+                        return res.status(400).json({ message: "El DUI ya está registrado" });
+                    }
+                    if (results2.some(m => m.licencia_medica === licencia_medica)) {
+                        return res.status(400).json({ message: "La licencia médica ya está registrada" });
+                    }
+                }
 
-                const id_usuario = result.insertId;
-                // Insertar en medico
+                // Generar contraseña aleatoria segura
+                const randomPassword = generarPasswordSeguro(15);
+                const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/;
+                if (!passwordRegex.test(randomPassword)) {
+                    return res.status(500).json({ message: "Error generando contraseña segura" });
+                }
+
+                // Encriptar contraseña
+                const hashedPassword = await bcrypt.hash(randomPassword, 10);
+
+                // Insertar en usuario
                 db.query(
-                    "INSERT INTO medico (id_usuario, id_especialidad, licencia_medica, num_identificacion, activo) VALUES (?, ?, ?, ?, 1)",
-                    [id_usuario, id_especialidad, licencia_medica, num_identificacion],
-                    async (err2) => {
-                        if (err2) return res.status(500).json({ message: "Error al crear médico" });
+                    "INSERT INTO usuario (nombres, apellidos, direccion, telefono, correo, contrasena, sexo, rol) VALUES (?, ?, ?, ?, ?, ?, ?, 'medico')",
+                    [nombres, apellidos, direccion, telefono, correo, hashedPassword, sexo],
+                    (err, result) => {
+                        if (err) return res.status(500).json({ message: "Error al crear usuario" });
 
-                        // Enviar correo con credenciales
-                        try {
-                            // Configura tu transporte de correo aquí
-                            const transporter = nodemailer.createTransport({
-                                service: "gmail",
-                                auth: {
-                                    user: process.env.EMAIL_USER, // Tu correo emisor
-                                    pass: process.env.EMAIL_PASS  // Tu contraseña o app password
+                        const id_usuario = result.insertId;
+                        // Insertar en medico
+                        db.query(
+                            "INSERT INTO medico (id_usuario, id_especialidad, licencia_medica, num_identificacion, activo) VALUES (?, ?, ?, ?, 1)",
+                            [id_usuario, id_especialidad, licencia_medica, num_identificacion],
+                            async (err2) => {
+                                if (err2) return res.status(500).json({ message: "Error al crear médico" });
+
+                                // Enviar correo con credenciales
+                                try {
+                                    const transporter = nodemailer.createTransport({
+                                        service: "gmail",
+                                        auth: {
+                                            user: process.env.EMAIL_USER,
+                                            pass: process.env.EMAIL_PASS
+                                        }
+                                    });
+
+                                    const mailOptions = {
+                                        from: `"Clínica Johnson" <${process.env.EMAIL_USER}>`,
+                                        to: correo,
+                                        subject: "Registro en el sistema de Control de Citas - Clínica Johnson",
+                                        html: `
+                                            <div style="background:linear-gradient(90deg,#f5faff 60%,#e3eafc 100%);padding:32px 0;min-height:100vh;font-family:'Segoe UI',Arial,sans-serif;">
+                                            <div style="max-width:480px;margin:40px auto;background:#fff;border-radius:18px;box-shadow:0 4px 24px 0 rgba(46,93,161,0.10);padding:32px 28px 28px 28px;">
+                                                <div style="text-align:center;margin-bottom:24px;">
+                                                <img src="https://i.ibb.co/YBwjdG4Y/logo-clinica-blanco.png" alt="Logo Clínica Johnson" style="height:64px;width:64px;object-fit:contain;border-radius:50%;background:#2e5da1;padding:8px;box-shadow:0 2px 8px 0 rgba(46,93,161,0.10);" />
+                                                </div>
+                                                <h2 style="color:#2e5da1;font-weight:bold;letter-spacing:0.5px;font-size:1.7rem;text-align:center;margin-bottom:12px;">
+                                                ¡Bienvenido/a al sistema de Control de Citas!
+                                                </h2>
+                                                <p style="color:#444;font-size:1.08rem;text-align:center;margin-bottom:24px;">
+                                                Estimado/a <span style="color:#fad02c;font-weight:bold;">${nombres} ${apellidos}</span>,
+                                                </p>
+                                                <p style="color:#444;font-size:1.08rem;margin-bottom:18px;">
+                                                Su usuario ha sido registrado exitosamente como <b>médico</b> en el sistema de la <b>Clínica Johnson</b>.
+                                                </p>
+                                                <div style="background:#f5faff;border-radius:12px;padding:18px 16px;margin-bottom:20px;">
+                                                <p style="margin:0 0 8px 0;color:#2e5da1;font-weight:500;">Credenciales de acceso:</p>
+                                                <ul style="list-style:none;padding:0;margin:0;">
+                                                    <li style="margin-bottom:6px;"><b>Correo:</b> <span style="color:#2e5da1;">${correo}</span></li>
+                                                    <li><b>Contraseña:</b> <span style="color:#2e5da1;">${randomPassword}</span></li>
+                                                </ul>
+                                                </div>
+                                                <p style="color:#444;font-size:1.05rem;margin-bottom:18px;">
+                                                Por favor, inicie sesión en la plataforma y cambie su contraseña lo antes posible para mayor seguridad.
+                                                </p>
+                                                <div style="text-align:center;margin-top:28px;">
+                                                <a href="${frontendUrl}" style="background:#2e5da1;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:bold;letter-spacing:0.5px;box-shadow:0 2px 8px 0 rgba(46,93,161,0.10);">Ir al sistema</a>
+                                                </div>
+                                                <p style="color:#888;font-size:0.98rem;text-align:center;margin-top:36px;">
+                                                Atentamente,<br>
+                                                <span style="color:#2e5da1;font-weight:bold;">Clínica Johnson</span>
+                                                </p>
+                                            </div>
+                                            </div>
+                                            `
+                                    };
+
+                                    await transporter.sendMail(mailOptions);
+                                } catch (mailErr) {
+                                    return res.status(201).json({
+                                        message: "Médico registrado, pero no se pudo enviar el correo.",
+                                        error: mailErr.message
+                                    });
                                 }
-                            });
 
-                            const mailOptions = {
-                                from: `"Clínica Johnson" <${process.env.EMAIL_USER}>`,
-                                to: correo,
-                                subject: "Registro en el sistema de Control de Citas - Clínica Johnson",
-                                html: `
-                                        <div style="background:linear-gradient(90deg,#f5faff 60%,#e3eafc 100%);padding:32px 0;min-height:100vh;font-family:'Segoe UI',Arial,sans-serif;">
-                                        <div style="max-width:480px;margin:40px auto;background:#fff;border-radius:18px;box-shadow:0 4px 24px 0 rgba(46,93,161,0.10);padding:32px 28px 28px 28px;">
-                                            <div style="text-align:center;margin-bottom:24px;">
-                                            <img src="https://i.ibb.co/YBwjdG4Y/logo-clinica-blanco.png" alt="Logo Clínica Johnson" style="height:64px;width:64px;object-fit:contain;border-radius:50%;background:#2e5da1;padding:8px;box-shadow:0 2px 8px 0 rgba(46,93,161,0.10);" />
-                                            </div>
-                                            <h2 style="color:#2e5da1;font-weight:bold;letter-spacing:0.5px;font-size:1.7rem;text-align:center;margin-bottom:12px;">
-                                            ¡Bienvenido/a al sistema de Control de Citas!
-                                            </h2>
-                                            <p style="color:#444;font-size:1.08rem;text-align:center;margin-bottom:24px;">
-                                            Estimado/a <span style="color:#fad02c;font-weight:bold;">${nombres} ${apellidos}</span>,
-                                            </p>
-                                            <p style="color:#444;font-size:1.08rem;margin-bottom:18px;">
-                                            Su usuario ha sido registrado exitosamente como <b>médico</b> en el sistema de la <b>Clínica Johnson</b>.
-                                            </p>
-                                            <div style="background:#f5faff;border-radius:12px;padding:18px 16px;margin-bottom:20px;">
-                                            <p style="margin:0 0 8px 0;color:#2e5da1;font-weight:500;">Credenciales de acceso:</p>
-                                            <ul style="list-style:none;padding:0;margin:0;">
-                                                <li style="margin-bottom:6px;"><b>Correo:</b> <span style="color:#2e5da1;">${correo}</span></li>
-                                                <li><b>Contraseña:</b> <span style="color:#2e5da1;">${randomPassword}</span></li>
-                                            </ul>
-                                            </div>
-                                            <p style="color:#444;font-size:1.05rem;margin-bottom:18px;">
-                                            Por favor, inicie sesión en la plataforma y cambie su contraseña lo antes posible para mayor seguridad.
-                                            </p>
-                                            <div style="text-align:center;margin-top:28px;">
-                                            <a href="https://clinica-johnson.com/login" style="background:#2e5da1;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:bold;letter-spacing:0.5px;box-shadow:0 2px 8px 0 rgba(46,93,161,0.10);">Ir al sistema</a>
-                                            </div>
-                                            <p style="color:#888;font-size:0.98rem;text-align:center;margin-top:36px;">
-                                            Atentamente,<br>
-                                            <span style="color:#2e5da1;font-weight:bold;">Clínica Johnson</span>
-                                            </p>
-                                        </div>
-                                        </div>
-                                        `
-                            };
-
-                            await transporter.sendMail(mailOptions);
-                        } catch (mailErr) {
-                            return res.status(201).json({
-                                message: "Médico registrado, pero no se pudo enviar el correo.",
-                                error: mailErr.message
-                            });
-                        }
-
-                        res.status(201).json({ message: "Médico registrado exitosamente y correo enviado." });
+                                res.status(201).json({ message: "Médico registrado exitosamente y correo enviado." });
+                            }
+                        );
                     }
                 );
             }
