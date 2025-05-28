@@ -14,7 +14,17 @@ const {
   eliminarEspecialidad,
   registrarMedico,
   cambiarEstadoMedico,
-  getMedicoById
+  getMedicoById,
+  buscarPacientes,
+  getContactosPacienteAdmin,
+  agregarContactoPacienteAdmin,
+  editarContactoPacienteAdmin,
+  eliminarContactoPacienteAdmin,
+  getPacientePorId,
+  reporteCitasPorFecha,
+  reporteCitasPorMedico,
+  reporteCitasPorEspecialidad,
+  historialCitasPaciente
 } = require("../controllers/adminController");
 
 const router = express.Router();
@@ -39,5 +49,23 @@ router.get("/especialidades", getEspecialidades);
 router.post("/especialidades", crearEspecialidad);
 router.put("/especialidades/:id_especialidad", editarEspecialidad);
 router.delete("/especialidades/:id_especialidad", eliminarEspecialidad);
+
+// Buscar pacientes
+router.get("/buscar-pacientes", buscarPacientes);
+
+// CRUD de contactos de paciente (admin)
+router.get("/contactos-paciente", getContactosPacienteAdmin);
+router.post("/contactos-paciente", agregarContactoPacienteAdmin);
+router.put("/contactos-paciente/:id_contacto", editarContactoPacienteAdmin);
+router.delete("/contactos-paciente/:id_contacto", eliminarContactoPacienteAdmin);
+
+// Obtener paciente por ID
+router.get("/paciente/:id_paciente", getPacientePorId);
+
+// Reportes
+router.get("/reporte-citas-fecha", reporteCitasPorFecha);
+router.get("/reporte-citas-medico", reporteCitasPorMedico);
+router.get("/reporte-citas-especialidad", reporteCitasPorEspecialidad);
+router.get("/historial-citas-paciente", historialCitasPaciente);
 
 module.exports = router;

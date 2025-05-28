@@ -77,7 +77,7 @@ exports.getCitasMedico = (req, res) => {
 // HU10 - Cancelar Cita como Médico
 exports.cancelarCitaMedico = (req, res) => {
   const { idCita } = req.params;
-  const { id_medico, motivo_cancelacion } = req.body;
+  const { id_medico } = req.body;
   db.query(
     "SELECT * FROM cita WHERE id_cita = ? AND id_medico = ?",
     [idCita, id_medico],
@@ -89,8 +89,8 @@ exports.cancelarCitaMedico = (req, res) => {
         return res.status(400).json({ error: "La cita ya fue finalizada o cancelada" });
       }
       db.query(
-        "UPDATE cita SET estado = 3, motivo = ? WHERE id_cita = ?",
-        [motivo_cancelacion || "Cancelada por el médico", idCita],
+        "UPDATE cita SET estado = 3 WHERE id_cita = ?",
+        [idCita],
         (err2) => {
           if (err2) return res.status(500).json({ error: "Error al cancelar cita" });
           res.json({ mensaje: "Cita cancelada exitosamente" });
@@ -126,18 +126,18 @@ exports.getDetalleCita = (req, res) => {
 exports.agregarInforme = (req, res) => {
   const { id_cita } = req.params;
   const { descripcion } = req.body;
+  // Inserta informe y actualiza estado
   db.query(
-    "SELECT * FROM cita WHERE id_cita = ? AND estado = 1",
-    [id_cita],
-    (err, citas) => {
-      if (err) return res.status(500).json({ error: "Error al buscar cita" });
-      if (citas.length === 0) return res.status(400).json({ error: "Solo se puede agregar informe a citas finalizadas" });
+    "INSERT INTO informe_consulta (id_cita, descripcion, fecha_registro) VALUES (?, ?, NOW())",
+    [id_cita, descripcion],
+    (err) => {
+      if (err) return res.status(500).json({ error: "Error al guardar informe" });
       db.query(
-        "INSERT INTO informe_consulta (id_cita, descripcion, fecha_registro) VALUES (?, ?, NOW())",
-        [id_cita, descripcion],
+        "UPDATE cita SET estado = 1 WHERE id_cita = ?",
+        [id_cita],
         (err2) => {
-          if (err2) return res.status(500).json({ error: "Error al guardar informe" });
-          res.json({ mensaje: "Informe guardado correctamente" });
+          if (err2) return res.status(500).json({ error: "Error al actualizar estado" });
+          res.json({ mensaje: "Informe agregado y cita finalizada" });
         }
       );
     }
@@ -159,4 +159,27 @@ exports.getExpedientePaciente = (req, res) => {
       res.json(rows);
     }
   );
+};
+
+exports.getExpedientePorPaciente = (req, res) => {
+    const { id_paciente } = req.params;
+    db.query(
+        `SELECT c.id_cita, c.fecha_cita, c.hora_cita, c.estado, c.motivo,
+                u.nombres as medico_nombre, u.apellidos as medico_apellido, e.nombre as especialidad,
+                inf.id_informe_consulta, inf.descripcion as informe, inf.fecha_registro
+         FROM cita c
+         JOIN medico m ON c.id_medico = m.id_medico
+         JOIN usuario u ON m.id_usuario = u.id_usuario
+         JOIN especialidad e ON m.id_especialidad = e.id_especialidad
+         LEFT JOIN informe_consulta inf ON c.id_cita = inf.id_cita
+         WHERE c.id_paciente = ?
+         ORDER BY c.fecha_cita DESC, c.hora_cita DESC`,
+        [id_paciente],
+        (error, rows) => {
+            if (error) {
+                return res.status(500).json({ error: "Error al obtener expediente" });
+            }
+            res.json(rows);
+        }
+    );
 };
