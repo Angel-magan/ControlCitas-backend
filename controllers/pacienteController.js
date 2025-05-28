@@ -171,13 +171,13 @@ exports.getExpedientePaciente = (req, res) => {
   db.query(
     `SELECT c.id_cita, c.fecha_cita, c.hora_cita, c.estado, c.motivo,
             u.nombres as medico_nombre, u.apellidos as medico_apellido, e.nombre as especialidad,
-            inf.id_informe, inf.detalle as informe
+            inf.id_informe_consulta, inf.descripcion as informe, inf.fecha_registro
      FROM cita c
      JOIN medico m ON c.id_medico = m.id_medico
      JOIN usuario u ON m.id_usuario = u.id_usuario
      JOIN especialidad e ON m.id_especialidad = e.id_especialidad
-     LEFT JOIN informe_cita inf ON c.id_cita = inf.id_cita
-     WHERE c.id_paciente = ? AND c.fecha_cita < CURDATE()
+     LEFT JOIN informe_consulta inf ON c.id_cita = inf.id_cita
+     WHERE c.id_paciente = ? AND c.estado = 1
      ORDER BY c.fecha_cita DESC, c.hora_cita DESC`,
     [id_paciente],
     (error, rows) => {
@@ -195,13 +195,13 @@ exports.getExpedientePorPaciente = (req, res) => {
   db.query(
     `SELECT c.id_cita, c.fecha_cita, c.hora_cita, c.estado, c.motivo,
             u.nombres as medico_nombre, u.apellidos as medico_apellido, e.nombre as especialidad,
-            inf.id_informe, inf.detalle as informe
+            inf.id_informe_consulta, inf.descripcion as informe, inf.fecha_registro
      FROM cita c
      JOIN medico m ON c.id_medico = m.id_medico
      JOIN usuario u ON m.id_usuario = u.id_usuario
      JOIN especialidad e ON m.id_especialidad = e.id_especialidad
-     LEFT JOIN informe_cita inf ON c.id_cita = inf.id_cita
-     WHERE c.id_paciente = ? AND c.fecha_cita < CURDATE()
+     LEFT JOIN informe_consulta inf ON c.id_cita = inf.id_cita
+     WHERE c.id_paciente = ? 
      ORDER BY c.fecha_cita DESC, c.hora_cita DESC`,
     [id_paciente],
     (error, rows) => {
@@ -209,6 +209,45 @@ exports.getExpedientePorPaciente = (req, res) => {
         return res.status(500).json({ error: "Error al obtener expediente" });
       }
       res.json(rows);
+    }
+  );
+};
+
+// Listar contactos de un paciente
+exports.getContactosPaciente = (req, res) => {
+  const { id_paciente } = req.query;
+  db.query(
+    "SELECT * FROM contacto WHERE id_paciente = ? ORDER BY id_contacto DESC",
+    [id_paciente],
+    (err, rows) => {
+      if (err) return res.status(500).json({ error: "Error al obtener contactos" });
+      res.json(rows);
+    }
+  );
+};
+
+// Agregar contacto
+exports.agregarContactoPaciente = (req, res) => {
+  const { id_paciente, nombre, apellido, parentesco, telefono, direccion, correo } = req.body;
+  db.query(
+    "INSERT INTO contacto (id_paciente, nombre, apellido, parentesco, telefono, direccion, correo) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    [id_paciente, nombre, apellido, parentesco, telefono, direccion, correo],
+    (err, result) => {
+      if (err) return res.status(500).json({ error: "Error al agregar contacto" });
+      res.json({ mensaje: "Contacto agregado correctamente" });
+    }
+  );
+};
+
+// Eliminar contacto
+exports.eliminarContactoPaciente = (req, res) => {
+  const { id_contacto } = req.params;
+  db.query(
+    "DELETE FROM contacto WHERE id_contacto = ?",
+    [id_contacto],
+    (err, result) => {
+      if (err) return res.status(500).json({ error: "Error al eliminar contacto" });
+      res.json({ mensaje: "Contacto eliminado correctamente" });
     }
   );
 };

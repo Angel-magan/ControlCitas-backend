@@ -130,8 +130,41 @@ exports.loginUser = (req, res) => {
           .json({ message: "Correo o contraseña incorrectos" });
       }
 
-      // Aquí puedes generar un token JWT si lo necesitas
-      res.json({ message: "Inicio de sesión exitoso", user });
+      // Dependiendo del rol, obtener datos adicionales
+      if (user.rol === "medico") {
+        db.query(
+          "SELECT * FROM medico WHERE id_usuario = ?",
+          [user.id_usuario],
+          (err2, medicoResults) => {
+            if (err2) {
+              return res.status(500).json({ message: "Error al obtener datos de médico" });
+            }
+            res.json({
+              message: "Inicio de sesión exitoso",
+              user,
+              medico: medicoResults[0] || null,
+            });
+          }
+        );
+      } else if (user.rol === "paciente") {
+        db.query(
+          "SELECT * FROM paciente WHERE id_usuario = ?",
+          [user.id_usuario],
+          (err2, pacienteResults) => {
+            if (err2) {
+              return res.status(500).json({ message: "Error al obtener datos de paciente" });
+            }
+            res.json({
+              message: "Inicio de sesión exitoso",
+              user,
+              paciente: pacienteResults[0] || null,
+            });
+          }
+        );
+      } else {
+        // Otros roles
+        res.json({ message: "Inicio de sesión exitoso", user });
+      }
     });
   });
 };

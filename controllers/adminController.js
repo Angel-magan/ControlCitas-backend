@@ -7,12 +7,17 @@ const frontendUrl = `http://${frontendHost}:${frontendPort}/`; //Url para el log
 
 // Listar todos los usuarios
 exports.getUsuarios = (req, res) => {
-    db.query("SELECT * FROM usuario", (error, rows) => {
-        if (error) {
-            return res.status(500).json({ error: "Error al obtener usuarios" });
+    db.query(
+        `SELECT u.*, p.id_paciente, m.id_medico
+     FROM usuario u
+     LEFT JOIN paciente p ON u.id_usuario = p.id_usuario
+     LEFT JOIN medico m ON u.id_usuario = m.id_usuario
+     ORDER BY u.id_usuario DESC`,
+        (err, rows) => {
+            if (err) return res.status(500).json({ message: "Error al obtener usuarios" });
+            res.json(rows);
         }
-        res.json(rows);
-    });
+    );
 };
 
 // Crear usuario (admin puede crear cualquier usuario)
@@ -401,17 +406,18 @@ exports.reporteCitasPorFecha = (req, res) => {
     const { fechaInicio, fechaFin } = req.query;
     db.query(
         `SELECT 
-            CONCAT(p.nombres, ' ', p.apellidos) AS paciente,
-            CONCAT(med.nombres, ' ', med.apellidos) AS medico,
+            CONCAT(u_pac.nombres, ' ', u_pac.apellidos) AS paciente,
+            CONCAT(u_med.nombres, ' ', u_med.apellidos) AS medico,
             e.nombre AS especialidad,
-            c.fecha, c.hora, c.estado
+            c.fecha_cita, c.hora_cita, c.estado
         FROM cita c
         JOIN paciente p ON c.id_paciente = p.id_paciente
+        JOIN usuario u_pac ON p.id_usuario = u_pac.id_usuario
         JOIN medico m ON c.id_medico = m.id_medico
-        JOIN usuario med ON m.id_usuario = med.id_usuario
+        JOIN usuario u_med ON m.id_usuario = u_med.id_usuario
         JOIN especialidad e ON m.id_especialidad = e.id_especialidad
-        WHERE c.fecha BETWEEN ? AND ?
-        ORDER BY c.fecha, c.hora`,
+        WHERE c.fecha_cita BETWEEN ? AND ?
+        ORDER BY c.fecha_cita, c.hora_cita`,
         [fechaInicio, fechaFin],
         (err, rows) => {
             if (err) return res.status(500).json({ message: "Error al generar reporte" });
@@ -424,20 +430,21 @@ exports.reporteCitasPorFecha = (req, res) => {
 exports.reporteCitasPorMedico = (req, res) => {
     const { id_medico, fechaInicio, fechaFin, desglose } = req.query;
     db.query(
-        `SELECT c.fecha, c.hora, CONCAT(p.nombres, ' ', p.apellidos) AS paciente, c.estado
+        `SELECT c.fecha_cita, c.hora_cita, CONCAT(u_pac.nombres, ' ', u_pac.apellidos) AS paciente, c.estado
          FROM cita c
          JOIN paciente p ON c.id_paciente = p.id_paciente
-         WHERE c.id_medico = ? AND c.fecha BETWEEN ? AND ?
-         ORDER BY c.fecha, c.hora`,
+         JOIN usuario u_pac ON p.id_usuario = u_pac.id_usuario
+         WHERE c.id_medico = ? AND c.fecha_cita BETWEEN ? AND ?
+         ORDER BY c.fecha_cita, c.hora_cita`,
         [id_medico, fechaInicio, fechaFin],
         (err, rows) => {
             if (err) return res.status(500).json({ message: "Error al generar reporte" });
             // Resumen
             const resumen = { atendidas: 0, canceladas: 0, pendientes: 0 };
             rows.forEach(r => {
-                if (r.estado === "finalizada") resumen.atendidas++;
-                else if (r.estado.startsWith("cancelada")) resumen.canceladas++;
-                else resumen.pendientes++;
+                if (r.estado === 1) resumen.atendidas++; // 1 = Finalizada
+                else if (r.estado === 2 || r.estado === 3) resumen.canceladas++; // 2/3 = Cancelada
+                else resumen.pendientes++; // 0 = Pendiente
             });
             res.json({
                 resumen,
@@ -455,7 +462,7 @@ exports.reporteCitasPorEspecialidad = (req, res) => {
          FROM cita c
          JOIN medico m ON c.id_medico = m.id_medico
          JOIN especialidad e ON m.id_especialidad = e.id_especialidad
-         WHERE c.fecha BETWEEN ? AND ?
+         WHERE c.fecha_cita BETWEEN ? AND ?
          GROUP BY e.nombre`,
         [fechaInicio, fechaFin],
         (err, rows) => {
@@ -475,11 +482,13 @@ exports.reporteCitasPorEspecialidad = (req, res) => {
 exports.buscarPacientes = (req, res) => {
     const { q } = req.query;
     db.query(
-        `SELECT id_paciente, nombres, apellidos, correo, num_identificacion
-         FROM paciente
-         WHERE nombres LIKE ? OR apellidos LIKE ? OR correo LIKE ? OR num_identificacion LIKE ?
-         LIMIT 10`,
-        [`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`],
+        `SELECT p.id_paciente, u.nombres, u.apellidos, u.correo, u.telefono, u.direccion
+        FROM paciente p
+        JOIN usuario u ON p.id_usuario = u.id_usuario
+        WHERE u.nombres LIKE ? OR u.apellidos LIKE ? OR u.correo LIKE ?
+        GROUP BY p.id_paciente
+        LIMIT 20`,
+        [`%${q}%`, `%${q}%`, `%${q}%`],
         (err, rows) => {
             if (err) return res.status(500).json({ message: "Error al buscar pacientes" });
             res.json(rows);
@@ -491,24 +500,92 @@ exports.buscarPacientes = (req, res) => {
 exports.historialCitasPaciente = (req, res) => {
     const { id_paciente, orden, estado } = req.query;
     let sql = `
-        SELECT c.fecha, c.hora, CONCAT(med.nombres, ' ', med.apellidos) AS medico, 
+        SELECT c.fecha_cita, c.hora_cita, CONCAT(u_med.nombres, ' ', u_med.apellidos) AS medico, 
                e.nombre AS especialidad, c.estado, c.motivo
         FROM cita c
         JOIN medico m ON c.id_medico = m.id_medico
-        JOIN usuario med ON m.id_usuario = med.id_usuario
+        JOIN usuario u_med ON m.id_usuario = u_med.id_usuario
         JOIN especialidad e ON m.id_especialidad = e.id_especialidad
         WHERE c.id_paciente = ?
     `;
     const params = [id_paciente];
+
+    // Traduce el estado string a número
+    let estadoNum = null;
     if (estado) {
-        sql += " AND c.estado = ?";
-        params.push(estado);
+        if (estado === "pendiente") estadoNum = 0;
+        else if (estado === "finalizada") estadoNum = 1;
+        else if (estado === "cancelada_paciente") estadoNum = 2;
+        else if (estado === "cancelada_medico") estadoNum = 3;
     }
-    sql += ` ORDER BY c.fecha ${orden === "asc" ? "ASC" : "DESC"}, c.hora`;
+    if (estado && estadoNum !== null) {
+        sql += " AND c.estado = ?";
+        params.push(estadoNum);
+    }
+
+    sql += ` ORDER BY c.fecha_cita ${orden === "asc" ? "ASC" : "DESC"}, c.hora_cita ${orden === "asc" ? "ASC" : "DESC"}`;
+
     db.query(sql, params, (err, rows) => {
         if (err) return res.status(500).json({ message: "Error al obtener historial" });
         res.json(rows);
     });
+};
+
+// Listar contactos de un paciente (admin)
+exports.getContactosPacienteAdmin = (req, res) => {
+    const { id_paciente } = req.query;
+    if (!id_paciente) return res.status(400).json({ error: "Falta id_paciente" });
+    db.query(
+        "SELECT * FROM contacto WHERE id_paciente = ? ORDER BY id_contacto DESC",
+        [id_paciente],
+        (err, rows) => {
+            if (err) return res.status(500).json({ error: "Error al obtener contactos" });
+            res.json(rows);
+        }
+    );
+};
+
+// Agregar contacto (admin)
+exports.agregarContactoPacienteAdmin = (req, res) => {
+    const { id_paciente, nombre, apellido, parentesco, telefono, direccion, correo } = req.body;
+    if (!id_paciente || !nombre || !apellido || !parentesco || !telefono) {
+        return res.status(400).json({ error: "Faltan campos obligatorios" });
+    }
+    db.query(
+        "INSERT INTO contacto (id_paciente, nombre, apellido, parentesco, telefono, direccion, correo) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [id_paciente, nombre, apellido, parentesco, telefono, direccion, correo],
+        (err, result) => {
+            if (err) return res.status(500).json({ error: "Error al agregar contacto" });
+            res.json({ mensaje: "Contacto agregado correctamente" });
+        }
+    );
+};
+
+// Editar contacto (admin)
+exports.editarContactoPacienteAdmin = (req, res) => {
+    const { id_contacto } = req.params;
+    const { nombre, apellido, parentesco, telefono, direccion, correo } = req.body;
+    db.query(
+        "UPDATE contacto SET nombre=?, apellido=?, parentesco=?, telefono=?, direccion=?, correo=? WHERE id_contacto=?",
+        [nombre, apellido, parentesco, telefono, direccion, correo, id_contacto],
+        (err, result) => {
+            if (err) return res.status(500).json({ error: "Error al editar contacto" });
+            res.json({ mensaje: "Contacto actualizado correctamente" });
+        }
+    );
+};
+
+// Eliminar contacto (admin)
+exports.eliminarContactoPacienteAdmin = (req, res) => {
+    const { id_contacto } = req.params;
+    db.query(
+        "DELETE FROM contacto WHERE id_contacto = ?",
+        [id_contacto],
+        (err, result) => {
+            if (err) return res.status(500).json({ error: "Error al eliminar contacto" });
+            res.json({ mensaje: "Contacto eliminado correctamente" });
+        }
+    );
 };
 
 // Generador seguro de contraseña
@@ -530,3 +607,19 @@ function generarPasswordSeguro(length = 15) {
     // Mezclar el array para que los primeros caracteres no sean siempre los mismos tipos
     return password.sort(() => Math.random() - 0.5).join('');
 }
+
+// Obtener paciente por ID
+exports.getPacientePorId = (req, res) => {
+    const { id_paciente } = req.params;
+    db.query(
+        `SELECT p.id_paciente, u.nombres, u.apellidos, u.correo, u.telefono, u.direccion
+         FROM paciente p
+         JOIN usuario u ON p.id_usuario = u.id_usuario
+         WHERE p.id_paciente = ?`,
+        [id_paciente],
+        (err, rows) => {
+            if (err) return res.status(500).json({ error: "Error al obtener paciente" });
+            res.json(rows);
+        }
+    );
+};
