@@ -5,6 +5,20 @@ const frontendHost = process.env.DB_HOST || "localhost";
 const frontendPort = process.env.PORT || "5173";
 const frontendUrl = `https://controlcitas-frontend-production.up.railway.app/`; //Url para el login del correo
 
+function formatearFecha(fechaStr) {
+    if (!fechaStr) return "";
+    // Soporta tanto Date como string tipo "YYYY-MM-DD"
+    if (typeof fechaStr === "string" && /^\d{4}-\d{2}-\d{2}$/.test(fechaStr)) {
+        const [anio, mes, dia] = fechaStr.split("-");
+        return `${dia}/${mes}/${anio}`;
+    }
+    // Si es Date o string con hora
+    const fecha = new Date(fechaStr);
+    const dia = String(fecha.getDate()).padStart(2, "0");
+    const mes = String(fecha.getMonth() + 1).padStart(2, "0");
+    const anio = fecha.getFullYear();
+    return `${dia}/${mes}/${anio}`;
+}
 // Listar todos los usuarios
 exports.getUsuarios = (req, res) => {
     db.query(
@@ -108,13 +122,88 @@ exports.cambiarEstadoMedico = (req, res) => {
     const { id_medico } = req.params;
     const { activo } = req.body;
     db.query(
-        "UPDATE medico SET activo=? WHERE id_medico=?",
+        "UPDATE medico SET activo = ? WHERE id_medico = ?",
         [activo, id_medico],
-        (err) => {
-            if (err) {
-                return res.status(500).json({ message: "Error al actualizar el estado del médico" });
+        (err, result) => {
+            if (err) return res.status(500).json({ error: "Error al actualizar estado" });
+
+            // Si se inactiva el médico, cancelar citas pendientes y notificar
+            if (activo == 0) {
+                // 1. Buscar todas las citas pendientes de este médico
+                db.query(
+                    `SELECT c.*, p.id_usuario, u.correo, u.nombres, u.apellidos
+           FROM cita c
+           JOIN paciente p ON c.id_paciente = p.id_paciente
+           JOIN usuario u ON p.id_usuario = u.id_usuario
+           WHERE c.id_medico = ? AND c.estado = 0`,
+                    [id_medico],
+                    async (err2, citas) => {
+                        if (err2) return res.status(500).json({ error: "Error al buscar citas pendientes" });
+
+                        if (citas.length > 0) {
+                            // 2. Actualizar estado de las citas a 3 (cancelada por médico)
+                            db.query(
+                                "UPDATE cita SET estado = 3 WHERE id_medico = ? AND estado = 0",
+                                [id_medico],
+                                async (err3) => {
+                                    if (err3) return res.status(500).json({ error: "Error al cancelar citas" });
+
+                                    // 3. Notificar a cada paciente
+                                    for (const cita of citas) {
+                                        try {
+                                            const transporter = nodemailer.createTransport({
+                                                service: "gmail",
+                                                auth: {
+                                                    user: process.env.EMAIL_USER,
+                                                    pass: process.env.EMAIL_PASS
+                                                }
+                                            });
+                                            await transporter.sendMail({
+                                                from: `"Clínica Johnson" <${process.env.EMAIL_USER}>`,
+                                                to: cita.correo,
+                                                subject: "Cita cancelada por médico - Clínica Johnson",
+                                                html: `
+                                                <div style="background:#f5faff;padding:32px 0;min-height:100vh;font-family:'Segoe UI',Arial,sans-serif;">
+                                                    <div style="max-width:480px;margin:40px auto;background:#fff;border-radius:18px;box-shadow:0 4px 24px 0 rgba(46,93,161,0.10);padding:32px 28px 28px 28px;">
+                                                    <div style="text-align:center;margin-bottom:24px;">
+                                                        <img src="https://i.ibb.co/YBwjdG4Y/logo-clinica-blanco.png" alt="Logo Clínica Johnson" style="height:64px;width:64px;object-fit:contain;border-radius:50%;background:#2e5da1;padding:8px;box-shadow:0 2px 8px 0 rgba(46,93,161,0.10);" />
+                                                    </div>
+                                                    <h2 style="color:#d33;font-weight:bold;letter-spacing:0.5px;font-size:1.5rem;text-align:center;margin-bottom:12px;">
+                                                        Cita cancelada por el médico
+                                                    </h2>
+                                                    <p style="color:#444;font-size:1.08rem;text-align:center;margin-bottom:24px;">
+                                                        Estimado/a <span style="color:#fad02c;font-weight:bold;">${cita.nombres} ${cita.apellidos}</span>,
+                                                    </p>
+                                                    <p style="color:#444;font-size:1.08rem;margin-bottom:18px;">
+                                                        Lamentamos informarle que su cita programada para el <b>${formatearFecha(cita.fecha_cita)}</b> a las <b>${cita.hora_cita}</b> ha sido <b>cancelada</b> porque el médico con quien tenía la cita ya no se encuentra disponible en la clínica.<br>
+                                                        Por favor, reagende su cita con otro médico desde el sistema.
+                                                    </p>
+                                                    <div style="text-align:center;margin-top:28px;">
+                                                        <a href="https://controlcitas-frontend-production.up.railway.app/" style="background:#2e5da1;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:bold;letter-spacing:0.5px;box-shadow:0 2px 8px 0 rgba(46,93,161,0.10);">Ir al sistema</a>
+                                                    </div>
+                                                    <p style="color:#888;font-size:0.98rem;text-align:center;margin-top:36px;">
+                                                        Atentamente,<br>
+                                                        <span style="color:#2e5da1;font-weight:bold;">Clínica Johnson</span>
+                                                    </p>
+                                                    </div>
+                                                </div>
+                                                `
+                                            });
+                                        } catch (mailErr) {
+                                            console.log(mailErr)
+                                        }
+                                    }
+                                    return res.json({ message: "Estado actualizado y citas pendientes canceladas" });
+                                }
+                            );
+                        } else {
+                            return res.json({ message: "Estado actualizado. No había citas pendientes." });
+                        }
+                    }
+                );
+            } else {
+                return res.json({ message: "Estado actualizado" });
             }
-            res.json({ message: "Estado del médico actualizado correctamente" });
         }
     );
 };
