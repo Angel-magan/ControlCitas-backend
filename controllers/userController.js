@@ -1,5 +1,65 @@
 const db = require("../config/db");
 const bcrypt = require("bcryptjs"); //Libreria para encriptar contraseñas
+const nodemailer = require("nodemailer");
+
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
+  }
+});
+
+async function enviarCorreoBienvenida({ destinatario, nombre }) {
+  await transporter.sendMail({
+    from: `"Clínica Johnson" <${process.env.EMAIL_USER}>`,
+    to: destinatario,
+    subject: "¡Bienvenido/a a Clínica Johnson!",
+    html: `
+      <div style="background:#f5faff;padding:32px 0;min-height:100vh;font-family:'Segoe UI',Arial,sans-serif;">
+        <div style="max-width:480px;margin:40px auto;background:#fff;border-radius:18px;box-shadow:0 4px 24px 0 rgba(46,93,161,0.10);padding:32px 28px 28px 28px;">
+          <div style="text-align:center;margin-bottom:24px;">
+            <img src="https://i.ibb.co/YBwjdG4Y/logo-clinica-blanco.png" alt="Logo Clínica Johnson" style="height:64px;width:64px;object-fit:contain;border-radius:50%;background:#2e5da1;padding:8px;box-shadow:0 2px 8px 0 rgba(46,93,161,0.10);" />
+          </div>
+          <h2 style="color:#2e5da1;font-weight:bold;letter-spacing:0.5px;font-size:1.5rem;text-align:center;margin-bottom:12px;">
+            ¡Bienvenido/a a Clínica Johnson!
+          </h2>
+          <p style="color:#444;font-size:1.08rem;text-align:center;margin-bottom:24px;">
+            Estimado/a <span style="color:#fad02c;font-weight:bold;">${nombre}</span>,
+          </p>
+          <p style="color:#444;font-size:1.08rem;margin-bottom:18px;">
+            Su registro se ha realizado exitosamente. Ya puede acceder a nuestro sistema para gestionar sus citas y servicios médicos.
+          </p>
+          <div style="text-align:center;margin-top:28px;">
+            <a href="https://controlcitas-frontend-production.up.railway.app/" style="background:#2e5da1;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:bold;letter-spacing:0.5px;box-shadow:0 2px 8px 0 rgba(46,93,161,0.10);">Ir al sistema</a>
+          </div>
+          <p style="color:#888;font-size:0.98rem;text-align:center;margin-top:36px;">
+            Atentamente,<br>
+            <span style="color:#2e5da1;font-weight:bold;">Clínica Johnson</span>
+          </p>
+        </div>
+      </div>
+    `
+  });
+}
+
+function generarPasswordSeguro(length = 15) {
+  const mayus = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const minus = "abcdefghijklmnopqrstuvwxyz";
+  const nums = "0123456789";
+  const special = "!@#$%^&*()_+-=[]{},.<>/?";
+  let password = [
+    mayus[Math.floor(Math.random() * mayus.length)],
+    minus[Math.floor(Math.random() * minus.length)],
+    nums[Math.floor(Math.random() * nums.length)],
+    special[Math.floor(Math.random() * special.length)]
+  ];
+  const all = mayus + minus + nums + special;
+  for (let i = password.length; i < length; i++) {
+    password.push(all[Math.floor(Math.random() * all.length)]);
+  }
+  return password.sort(() => Math.random() - 0.5).join('');
+}
 
 exports.registerUser = (req, res) => {
   const {
@@ -83,6 +143,14 @@ exports.registerUser = (req, res) => {
                 return res
                   .status(500)
                   .json({ message: "Error al registrar el paciente" });
+              }
+              try {
+                enviarCorreoBienvenida({
+                  destinatario: correo,
+                  nombre: `${nombres} ${apellidos}`
+                });
+              } catch (mailErr) {
+                // No detiene el flujo si falla el correo
               }
               res.status(201).json({ message: "Paciente registrado correctamente" });
             }
@@ -221,5 +289,77 @@ exports.cambiarContrasena = (req, res) => {
         );
       });
     });
+  });
+};
+
+exports.recuperarContrasena = (req, res) => {
+  const { correo } = req.body;
+  if (!correo) {
+    return res.status(400).json({ message: "El correo es obligatorio" });
+  }
+
+  // Verifica si existe el usuario
+  db.query("SELECT * FROM usuario WHERE correo = ?", [correo], async (err, results) => {
+    if (err) return res.status(500).json({ message: "Error en la base de datos" });
+    if (results.length === 0) {
+      return res.status(404).json({ message: "No existe una cuenta con ese correo" });
+    }
+
+    const usuario = results[0];
+    const nuevaContrasena = generarPasswordSeguro(15);
+    const hashedPassword = await bcrypt.hash(nuevaContrasena, 10);
+
+    // Actualiza la contraseña
+    db.query(
+      "UPDATE usuario SET contrasena = ? WHERE correo = ?",
+      [hashedPassword, correo],
+      async (err2) => {
+        if (err2) return res.status(500).json({ message: "Error al actualizar la contraseña" });
+
+        // Envía el correo
+        try {
+          await transporter.sendMail({
+            from: `"Clínica Johnson" <${process.env.EMAIL_USER}>`,
+            to: correo,
+            subject: "Recuperación de contraseña - Clínica Johnson",
+            html: `
+              <div style="background:#f5faff;padding:32px 0;min-height:100vh;font-family:'Segoe UI',Arial,sans-serif;">
+                <div style="max-width:480px;margin:40px auto;background:#fff;border-radius:18px;box-shadow:0 4px 24px 0 rgba(46,93,161,0.10);padding:32px 28px 28px 28px;">
+                  <div style="text-align:center;margin-bottom:24px;">
+                    <img src="https://i.ibb.co/YBwjdG4Y/logo-clinica-blanco.png" alt="Logo Clínica Johnson" style="height:64px;width:64px;object-fit:contain;border-radius:50%;background:#2e5da1;padding:8px;box-shadow:0 2px 8px 0 rgba(46,93,161,0.10);" />
+                  </div>
+                  <h2 style="color:#2e5da1;font-weight:bold;letter-spacing:0.5px;font-size:1.5rem;text-align:center;margin-bottom:12px;">
+                    Recuperación de contraseña
+                  </h2>
+                  <p style="color:#444;font-size:1.08rem;text-align:center;margin-bottom:24px;">
+                    Estimado/a <span style="color:#fad02c;font-weight:bold;">${usuario.nombres} ${usuario.apellidos}</span>,
+                  </p>
+                  <p style="color:#444;font-size:1.08rem;margin-bottom:18px;">
+                    Se ha generado una nueva contraseña para su cuenta. Por favor, utilícela para iniciar sesión y cámbiela lo antes posible.
+                  </p>
+                  <div style="background:#f5faff;border-radius:12px;padding:18px 16px;margin-bottom:20px;">
+                    <ul style="list-style:none;padding:0;margin:0;">
+                      <li><b>Correo:</b> <span style="color:#2e5da1;">${correo}</span></li>
+                      <li><b>Nueva contraseña:</b> <span style="color:#2e5da1;">${nuevaContrasena}</span></li>
+                    </ul>
+                  </div>
+                  <div style="text-align:center;margin-top:28px;">
+                    <a href="https://controlcitas-frontend-production.up.railway.app/" style="background:#2e5da1;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:bold;letter-spacing:0.5px;box-shadow:0 2px 8px 0 rgba(46,93,161,0.10);">Ir al sistema</a>
+                  </div>
+                  <p style="color:#888;font-size:0.98rem;text-align:center;margin-top:36px;">
+                    Atentamente,<br>
+                    <span style="color:#2e5da1;font-weight:bold;">Clínica Johnson</span>
+                  </p>
+                </div>
+              </div>
+            `
+          });
+        } catch (mailErr) {
+          return res.status(200).json({ message: "Contraseña actualizada, pero no se pudo enviar el correo." });
+        }
+
+        res.status(200).json({ message: "Se ha enviado una nueva contraseña a su correo electrónico." });
+      }
+    );
   });
 };
