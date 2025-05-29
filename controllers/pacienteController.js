@@ -1,4 +1,29 @@
-const db = require("../config/db"); // Ajusta según tu configuración de conexión
+const db = require("../config/db");
+const nodemailer = require("nodemailer"); // Agrega esto
+const frontendUrl = `https://controlcitas-frontend-production.up.railway.app/`; // O tu URL de frontend
+
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
+  }
+});
+
+function formatearFecha(fechaStr) {
+  if (!fechaStr) return "";
+  // Soporta tanto Date como string tipo "YYYY-MM-DD"
+  if (typeof fechaStr === "string" && /^\d{4}-\d{2}-\d{2}$/.test(fechaStr)) {
+    const [anio, mes, dia] = fechaStr.split("-");
+    return `${dia}/${mes}/${anio}`;
+  }
+  // Si es Date o string con hora
+  const fecha = new Date(fechaStr);
+  const dia = String(fecha.getDate()).padStart(2, "0");
+  const mes = String(fecha.getMonth() + 1).padStart(2, "0");
+  const anio = fecha.getFullYear();
+  return `${dia}/${mes}/${anio}`;
+}
 
 // HU04 - Agendar Cita
 
@@ -59,9 +84,7 @@ exports.getDisponibilidadMedico = (req, res) => {
 exports.agendarCita = (req, res) => {
   const { id_paciente, id_medico, fecha_cita, hora_cita, motivo } = req.body;
   const hora = parseInt(hora_cita.split(":")[0]);
-  if (hora < 6 || hora > 17) {
-    return res.status(400).json({ error: "Horario fuera de rango permitido" });
-  }
+
   db.query(
     "SELECT * FROM cita WHERE id_paciente = ? AND fecha_cita = ? AND hora_cita = ? AND estado IN (0,1)",
     [id_paciente, fecha_cita, hora_cita],
@@ -85,11 +108,69 @@ exports.agendarCita = (req, res) => {
           db.query(
             "INSERT INTO cita (id_paciente, id_medico, fecha_cita, hora_cita, motivo, estado) VALUES (?, ?, ?, ?, ?, 0)",
             [id_paciente, id_medico, fecha_cita, hora_cita, motivo],
-            (error3) => {
+            (error3, result) => {
               if (error3) {
                 return res.status(500).json({ error: "Error al agendar cita" });
               }
-              res.json({ mensaje: "Cita agendada exitosamente" });
+
+              // Obtener datos del paciente y médico para el correo
+              db.query(
+                `SELECT u.correo, u.nombres, u.apellidos 
+                 FROM paciente p JOIN usuario u ON p.id_usuario = u.id_usuario 
+                 WHERE p.id_paciente = ?`,
+                [id_paciente],
+                (errP, rowsP) => {
+                  if (errP || rowsP.length === 0) return res.json({ mensaje: "Cita agendada, pero no se pudo enviar correo" });
+                  const paciente = rowsP[0];
+
+                  db.query(
+                    `SELECT u.nombres as medico_nombre, u.apellidos as medico_apellido, u.correo as correo, e.nombre as especialidad
+                     FROM medico m
+                     JOIN usuario u ON m.id_usuario = u.id_usuario
+                     JOIN especialidad e ON m.id_especialidad = e.id_especialidad
+                     WHERE m.id_medico = ?`,
+                    [id_medico],
+                    async (errM, rowsM) => {
+                      if (errM || rowsM.length === 0) return res.json({ mensaje: "Cita agendada, pero no se pudo enviar correo" });
+                      const medico = rowsM[0];
+
+                      try {
+                        // Notifica al paciente
+                        await enviarCorreoCita({
+                          destinatario: paciente.correo,
+                          nombre: `${paciente.nombres} ${paciente.apellidos}`,
+                          asunto: "Cita agendada - Clínica Johnson",
+                          tipo: "agendada",
+                          fecha_cita,
+                          hora_cita,
+                          medico_nombre: medico.medico_nombre,
+                          medico_apellido: medico.medico_apellido,
+                          especialidad: medico.especialidad,
+                          motivo
+                        });
+                        // Notifica al médico
+                        await enviarCorreoCita({
+                          destinatario: medico.correo,
+                          nombre: `${medico.medico_nombre} ${medico.medico_apellido}`,
+                          asunto: "Nueva cita asignada - Clínica Johnson",
+                          tipo: "agendada",
+                          fecha_cita,
+                          hora_cita,
+                          medico_nombre: medico.medico_nombre,
+                          medico_apellido: medico.medico_apellido,
+                          especialidad: medico.especialidad,
+                          motivo,
+                          esMedico: true, // <--- IMPORTANTE
+                          nombre_paciente: `${paciente.nombres} ${paciente.apellidos}` // <--- IMPORTANTE
+                        });
+                      } catch (mailErr) {
+                        // No detiene el flujo si falla el correo
+                      }
+                      res.json({ mensaje: "Cita agendada exitosamente" });
+                    }
+                  );
+                }
+              );
             }
           );
         }
@@ -134,7 +215,7 @@ exports.getCitasPaciente = (req, res) => {
 // HU06 - Cancelar Cita
 exports.cancelarCita = (req, res) => {
   const { idCita } = req.params;
-  const { id_paciente } = req.body; // Debe venir del token/session en producción
+  const { id_paciente } = req.body;
   db.query(
     "SELECT * FROM cita WHERE id_cita = ? AND id_paciente = ?",
     [idCita, id_paciente],
@@ -158,7 +239,65 @@ exports.cancelarCita = (req, res) => {
         if (error2) {
           return res.status(500).json({ error: "Error al cancelar cita" });
         }
-        res.json({ mensaje: "Cita cancelada exitosamente" });
+
+        // Obtener datos del paciente y médico para el correo
+        db.query(
+          `SELECT u.correo, u.nombres, u.apellidos 
+           FROM paciente p JOIN usuario u ON p.id_usuario = u.id_usuario 
+           WHERE p.id_paciente = ?`,
+          [id_paciente],
+          (errP, rowsP) => {
+            if (errP || rowsP.length === 0) return res.json({ mensaje: "Cita cancelada, pero no se pudo enviar correo" });
+            const paciente = rowsP[0];
+
+            db.query(
+              `SELECT u.nombres as medico_nombre, u.apellidos as medico_apellido, u.correo as correo, e.nombre as especialidad
+               FROM medico m
+               JOIN usuario u ON m.id_usuario = u.id_usuario
+               JOIN especialidad e ON m.id_especialidad = e.id_especialidad
+               WHERE m.id_medico = ?`,
+              [cita.id_medico],
+              async (errM, rowsM) => {
+                if (errM || rowsM.length === 0) return res.json({ mensaje: "Cita cancelada, pero no se pudo enviar correo" });
+                const medico = rowsM[0];
+
+                try {
+                  // Notifica al paciente
+                  await enviarCorreoCita({
+                    destinatario: paciente.correo,
+                    nombre: `${paciente.nombres} ${paciente.apellidos}`,
+                    asunto: "Cita cancelada - Clínica Johnson",
+                    tipo: "cancelada",
+                    fecha_cita: cita.fecha_cita,
+                    hora_cita: cita.hora_cita,
+                    medico_nombre: medico.medico_nombre,
+                    medico_apellido: medico.medico_apellido,
+                    especialidad: medico.especialidad,
+                    motivo: cita.motivo
+                  });
+                  // Notifica al médico
+                  await enviarCorreoCita({
+                    destinatario: medico.correo,
+                    nombre: `${medico.medico_nombre} ${medico.medico_apellido}`,
+                    asunto: "Cita cancelada - Clínica Johnson",
+                    tipo: "cancelada",
+                    fecha_cita: cita.fecha_cita,
+                    hora_cita: cita.hora_cita,
+                    medico_nombre: medico.medico_nombre,
+                    medico_apellido: medico.medico_apellido,
+                    especialidad: medico.especialidad,
+                    motivo: cita.motivo,
+                    esMedico: true, // <--- IMPORTANTE
+                    nombre_paciente: `${paciente.nombres} ${paciente.apellidos}` // <--- IMPORTANTE
+                  });
+                } catch (mailErr) {
+                  // No detiene el flujo si falla el correo
+                }
+                res.json({ mensaje: "Cita cancelada exitosamente" });
+              }
+            );
+          }
+        );
       });
     }
   );
@@ -251,3 +390,78 @@ exports.eliminarContactoPaciente = (req, res) => {
     }
   );
 };
+
+async function enviarCorreoCita({
+  destinatario,
+  nombre,
+  asunto,
+  tipo, // "agendada" o "cancelada"
+  fecha_cita,
+  hora_cita,
+  medico_nombre,
+  medico_apellido,
+  especialidad,
+  motivo,
+  esMedico = false, // Nuevo: indica si el destinatario es médico
+  nombre_paciente // Nuevo: nombre completo del paciente
+}) {
+  let titulo, mensaje;
+
+  if (tipo === "agendada") {
+    if (esMedico) {
+      titulo = "Nueva cita agendada con usted";
+      mensaje = `El paciente <b style="color:#2e5da1;">${nombre_paciente}</b> ha agendado una cita con usted en la Clínica Johnson.`;
+    } else {
+      titulo = "¡Cita agendada exitosamente!";
+      mensaje = "Su cita ha sido agendada con éxito en la Clínica Johnson.";
+    }
+  } else {
+    if (esMedico) {
+      titulo = "Cita cancelada por el paciente";
+      mensaje = `El paciente <b style="color:#2e5da1;">${nombre_paciente}</b> ha cancelado la cita que tenía agendada con usted en la Clínica Johnson.`;
+    } else {
+      titulo = "Cita cancelada";
+      mensaje = "Su cita ha sido cancelada exitosamente en la Clínica Johnson.";
+    }
+  }
+
+  await transporter.sendMail({
+    from: `"Clínica Johnson" <${process.env.EMAIL_USER}>`,
+    to: destinatario,
+    subject: asunto,
+    html: `
+      <div style="background:#f5faff;padding:32px 0;min-height:100vh;font-family:'Segoe UI',Arial,sans-serif;">
+        <div style="max-width:480px;margin:40px auto;background:#fff;border-radius:18px;box-shadow:0 4px 24px 0 rgba(46,93,161,0.10);padding:32px 28px 28px 28px;">
+          <div style="text-align:center;margin-bottom:24px;">
+            <img src="https://i.ibb.co/YBwjdG4Y/logo-clinica-blanco.png" alt="Logo Clínica Johnson" style="height:64px;width:64px;object-fit:contain;border-radius:50%;background:#2e5da1;padding:8px;box-shadow:0 2px 8px 0 rgba(46,93,161,0.10);" />
+          </div>
+          <h2 style="color:${tipo === "agendada" ? "#2e5da1" : "#d33"};font-weight:bold;letter-spacing:0.5px;font-size:1.5rem;text-align:center;margin-bottom:12px;">
+            ${titulo}
+          </h2>
+          <p style="color:#444;font-size:1.08rem;text-align:center;margin-bottom:24px;">
+            Estimado/a <span style="color:#fad02c;font-weight:bold;">${nombre}</span>,
+          </p>
+          <p style="color:#444;font-size:1.08rem;margin-bottom:18px;">
+            ${mensaje}
+          </p>
+          <div style="background:#f5faff;border-radius:12px;padding:18px 16px;margin-bottom:20px;">
+            <ul style="list-style:none;padding:0;margin:0;">
+              <li><b>Fecha:</b> <span style="color:#2e5da1;">${formatearFecha(fecha_cita)}</span></li>
+              <li><b>Hora:</b> <span style="color:#2e5da1;">${hora_cita}</span></li>
+              <li><b>Médico:</b> <span style="color:#2e5da1;">${medico_nombre} ${medico_apellido}</span></li>
+              <li><b>Especialidad:</b> <span style="color:#2e5da1;">${especialidad}</span></li>
+              <li><b>Motivo:</b> <span style="color:#2e5da1;">${motivo}</span></li>
+            </ul>
+          </div>
+          <div style="text-align:center;margin-top:28px;">
+            <a href="${frontendUrl}" style="background:#2e5da1;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:bold;letter-spacing:0.5px;box-shadow:0 2px 8px 0 rgba(46,93,161,0.10);">Ir al sistema</a>
+          </div>
+          <p style="color:#888;font-size:0.98rem;text-align:center;margin-top:36px;">
+            Atentamente,<br>
+            <span style="color:#2e5da1;font-weight:bold;">Clínica Johnson</span>
+          </p>
+        </div>
+      </div>
+    `
+  });
+}
