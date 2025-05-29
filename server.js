@@ -10,10 +10,23 @@ const medicoRoutes = require("./routes/medicoRoutes"); // <-- NUEVO
 
 const app = express(); //Instancia del servidor
  //Evitar errores al consumir en React
+const allowedOrigins = [
+  'https://citasfrontend-production.up.railway.app',
+  'http://localhost:5173', // por ejemplo para desarrollo local
+];
+
 app.use(cors({
-  origin: 'https://controlcitas-frontend-production.up.railway.app',
+  origin: function (origin, callback) {
+    // Permitir solicitudes sin origin (como curl o Postman)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    } else {
+      return callback(new Error('No permitido por CORS'));
+    }
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  credentials: true
+  credentials: true,
 }));
 app.use(express.json()); //Recibir los datos en JSON
 
