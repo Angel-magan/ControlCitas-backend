@@ -207,10 +207,15 @@ exports.loginUser = (req, res) => {
             if (err2) {
               return res.status(500).json({ message: "Error al obtener datos de médico" });
             }
+            const medico = medicoResults[0] || null;
+            // Validar si el médico está inactivo
+            if (!medico || medico.activo === 0) {
+              return res.status(403).json({ message: "Tu cuenta de médico está inactiva. Contacta al administrador." });
+            }
             res.json({
               message: "Inicio de sesión exitoso",
               user,
-              medico: medicoResults[0] || null,
+              medico,
             });
           }
         );

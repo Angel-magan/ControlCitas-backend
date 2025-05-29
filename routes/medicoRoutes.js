@@ -7,6 +7,7 @@ const {
   cancelarCitaMedico,
   getDetalleCita,
   agregarInforme,
+  editarInforme,
   getExpedientePaciente,
   getExpedientePorPaciente
 } = require("../controllers/medicoController");
@@ -23,6 +24,7 @@ router.get("/citas", getCitasMedico);
 router.put("/cancelarCita/:idCita", cancelarCitaMedico);
 router.get("/detalleCita/:id_cita", getDetalleCita);
 router.post("/agregar-informe/:id_cita", agregarInforme);
+router.put("/editar-informe/:id_cita", editarInforme);
 
 // Expediente
 router.get("/expediente", getExpedientePaciente);

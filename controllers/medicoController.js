@@ -290,6 +290,37 @@ exports.agregarInforme = (req, res) => {
   );
 };
 
+exports.editarInforme = (req, res) => {
+  const { id_cita } = req.params;
+  const { descripcion } = req.body;
+
+  if (!id_cita || !descripcion || descripcion.trim() === "") {
+    return res.status(400).json({ error: "El id de la cita y la descripción son obligatorios" });
+  }
+
+  // Verifica que exista el informe para esa cita
+  db.query(
+    "SELECT * FROM informe_consulta WHERE id_cita = ?",
+    [id_cita],
+    (err, rows) => {
+      if (err) return res.status(500).json({ error: "Error al buscar informe" });
+      if (rows.length === 0) {
+        return res.status(404).json({ error: "No existe informe para esta cita" });
+      }
+
+      // Actualiza la descripción y la fecha de edición
+      db.query(
+        "UPDATE informe_consulta SET descripcion = ?, fecha_registro = NOW() WHERE id_cita = ?",
+        [descripcion, id_cita],
+        (err2) => {
+          if (err2) return res.status(500).json({ error: "Error al actualizar informe" });
+          res.json({ mensaje: "Informe actualizado correctamente" });
+        }
+      );
+    }
+  );
+};
+
 // HU16 - Expediente de paciente (para médico)
 exports.getExpedientePaciente = (req, res) => {
   const { id_paciente } = req.query;
@@ -310,7 +341,7 @@ exports.getExpedientePaciente = (req, res) => {
 exports.getExpedientePorPaciente = (req, res) => {
     const { id_paciente } = req.params;
     db.query(
-        `SELECT c.id_cita, c.fecha_cita, c.hora_cita, c.estado, c.motivo,
+        `SELECT c.id_medico, c.id_cita, c.fecha_cita, c.hora_cita, c.estado, c.motivo,
                 u.nombres as medico_nombre, u.apellidos as medico_apellido, e.nombre as especialidad,
                 inf.id_informe_consulta, inf.descripcion as informe, inf.fecha_registro
          FROM cita c
