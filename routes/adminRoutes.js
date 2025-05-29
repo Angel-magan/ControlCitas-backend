@@ -24,7 +24,10 @@ const {
   reporteCitasPorFecha,
   reporteCitasPorMedico,
   reporteCitasPorEspecialidad,
-  historialCitasPaciente
+  historialCitasPaciente,
+  getCitasPorEstado,
+  getCitasPorMedico,
+  getCitasPorDia,
 } = require("../controllers/adminController");
 
 const router = express.Router();
@@ -67,5 +70,10 @@ router.get("/reporte-citas-fecha", reporteCitasPorFecha);
 router.get("/reporte-citas-medico", reporteCitasPorMedico);
 router.get("/reporte-citas-especialidad", reporteCitasPorEspecialidad);
 router.get("/historial-citas-paciente", historialCitasPaciente);
+
+// Gráficos
+router.get("/citas-por-estado", getCitasPorEstado);
+router.get("/citas-por-medico", getCitasPorMedico);
+router.get("/citas-por-dia", getCitasPorDia);
 
 module.exports = router;
