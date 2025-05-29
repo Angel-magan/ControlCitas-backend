@@ -482,7 +482,7 @@ exports.reporteCitasPorEspecialidad = (req, res) => {
 exports.buscarPacientes = (req, res) => {
     const { q } = req.query;
     db.query(
-        `SELECT p.id_paciente, u.nombres, u.apellidos, u.correo, u.telefono, u.direccion
+        `SELECT p.id_paciente, u.nombres, u.apellidos, p.fechaNacimiento, u.correo, u.telefono, u.direccion
         FROM paciente p
         JOIN usuario u ON p.id_usuario = u.id_usuario
         WHERE u.nombres LIKE ? OR u.apellidos LIKE ? OR u.correo LIKE ?

@@ -391,6 +391,27 @@ exports.eliminarContactoPaciente = (req, res) => {
   );
 };
 
+// Obtener datos personales del paciente por id_paciente
+exports.getDatosPaciente = (req, res) => {
+  const { id_paciente } = req.query;
+  db.query(
+    `SELECT p.id_paciente, u.nombres, u.apellidos, u.correo, u.telefono, u.direccion, u.sexo, p.fechaNacimiento
+     FROM paciente p
+     JOIN usuario u ON p.id_usuario = u.id_usuario
+     WHERE p.id_paciente = ?`,
+    [id_paciente],
+    (error, rows) => {
+      if (error) {
+        return res.status(500).json({ error: "Error al obtener datos del paciente" });
+      }
+      if (rows.length === 0) {
+        return res.status(404).json({ error: "Paciente no encontrado" });
+      }
+      res.json(rows[0]);
+    }
+  );
+};
+
 async function enviarCorreoCita({
   destinatario,
   nombre,
