@@ -9,7 +9,12 @@ const adminRoutes = require("./routes/adminRoutes");
 const medicoRoutes = require("./routes/medicoRoutes"); // <-- NUEVO
 
 const app = express(); //Instancia del servidor
-app.use(cors()); //Evitar errores al consumir en React
+ //Evitar errores al consumir en React
+app.use(cors({
+  origin: 'https://controlcitas-frontend-production.up.railway.app',
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  credentials: true
+}));
 app.use(express.json()); //Recibir los datos en JSON
 
 db.connect((err) => {
