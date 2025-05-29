@@ -8,7 +8,10 @@ const {
   getCitasPaciente,
   cancelarCita,
   getExpedientePaciente,
-  getExpedientePorPaciente
+  getExpedientePorPaciente,
+  getContactosPaciente,
+  agregarContactoPaciente,
+  eliminarContactoPaciente
 } = require("../controllers/pacienteController");
 
 const router = express.Router();
@@ -25,5 +28,10 @@ router.put("/cancelarCita/:idCita", cancelarCita);
 router.get("/expediente", getExpedientePaciente);
 // Expediente (médico ve expediente de cualquier paciente)
 router.get("/expediente/:id_paciente", getExpedientePorPaciente);
+
+// Contactos del paciente
+router.get("/contactos", getContactosPaciente);
+router.post("/contactos", agregarContactoPaciente);
+router.delete("/contactos/:id_contacto", eliminarContactoPaciente);
 
 module.exports = router;

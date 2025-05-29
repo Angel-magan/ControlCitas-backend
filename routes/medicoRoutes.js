@@ -7,7 +7,8 @@ const {
   cancelarCitaMedico,
   getDetalleCita,
   agregarInforme,
-  getExpedientePaciente
+  getExpedientePaciente,
+  getExpedientePorPaciente
 } = require("../controllers/medicoController");
 
 const router = express.Router();
@@ -21,9 +22,10 @@ router.delete("/horarios/:id_horario_medico", eliminarHorario);
 router.get("/citas", getCitasMedico);
 router.put("/cancelarCita/:idCita", cancelarCitaMedico);
 router.get("/detalleCita/:id_cita", getDetalleCita);
-router.post("/informe/:id_cita", agregarInforme);
+router.post("/agregar-informe/:id_cita", agregarInforme);
 
 // Expediente
 router.get("/expediente", getExpedientePaciente);
+router.get("/expediente/:id_paciente", getExpedientePorPaciente);
 
 module.exports = router;
