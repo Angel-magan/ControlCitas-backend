@@ -180,8 +180,9 @@ exports.agendarCita = (req, res) => {
 };
 
 // HU05 - Consultar Mis Citas
+// pacienteController.js
 exports.getCitasPaciente = (req, res) => {
-  const { id_paciente, estado, tipo } = req.query; // tipo: 'futuras' o 'pasadas'
+  const { id_paciente, estado } = req.query;
   let query = `
     SELECT c.id_cita, c.fecha_cita, c.hora_cita, c.estado, c.motivo,
            u.nombres as medico_nombre, u.apellidos as medico_apellido, e.nombre as especialidad
@@ -192,18 +193,11 @@ exports.getCitasPaciente = (req, res) => {
     WHERE c.id_paciente = ?
   `;
   const params = [id_paciente];
-
   if (estado) {
     query += " AND c.estado = ?";
     params.push(estado);
   }
-  if (tipo === "futuras") {
-    query += " AND c.fecha_cita >= CURDATE()";
-  } else if (tipo === "pasadas") {
-    query += " AND c.fecha_cita < CURDATE()";
-  }
   query += " ORDER BY c.fecha_cita ASC, c.hora_cita ASC";
-
   db.query(query, params, (error, rows) => {
     if (error) {
       return res.status(500).json({ error: "Error al obtener citas" });
