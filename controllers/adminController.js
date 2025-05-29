@@ -623,3 +623,64 @@ exports.getPacientePorId = (req, res) => {
         }
     );
 };
+
+// GRAFICAS
+// Obtener total de citas agrupadas por estado
+exports.getCitasPorEstado = (req, res) => {
+    const query = `
+        SELECT estado, COUNT(*) AS total
+        FROM cita
+        GROUP BY estado
+    `;
+
+    db.query(query, (err, results) => {
+        if (err) {
+            console.error("Error al obtener las citas por estado:", err);
+            return res.status(500).json({ message: "Error interno del servidor" });
+        }
+
+        res.json(results); // [{ estado: 0, total: 10 }, ...]
+    });
+};
+
+exports.getCitasPorMedico = (req, res) => {
+    const query = `
+        SELECT 
+            CONCAT(u.nombres, ' ', u.apellidos) AS medico,
+            COUNT(*) AS total
+        FROM cita c
+        INNER JOIN medico m ON c.id_medico = m.id_medico
+        INNER JOIN usuario u ON m.id_usuario = u.id_usuario
+        GROUP BY c.id_medico
+        ORDER BY total DESC
+    `;
+
+    db.query(query, (err, results) => {
+        if (err) {
+            console.error("Error al obtener citas por médico:", err);
+            return res.status(500).json({ message: "Error interno del servidor" });
+        }
+
+        res.json(results); // [{ medico: "Juan Pérez", total: 10 }, ...]
+    });
+};
+
+exports.getCitasPorDia = (req, res) => {
+    const query = `
+        SELECT 
+            fecha_cita AS fecha,
+            COUNT(*) AS total
+        FROM cita
+        GROUP BY fecha_cita
+        ORDER BY fecha_cita ASC
+    `;
+
+    db.query(query, (err, results) => {
+        if (err) {
+            console.error("Error al obtener citas por día:", err);
+            return res.status(500).json({ message: "Error interno del servidor" });
+        }
+
+        res.json(results); // [{ fecha: "2025-06-01", total: 5 }, ...]
+    });
+};
