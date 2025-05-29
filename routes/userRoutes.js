@@ -1,6 +1,6 @@
 const express = require("express"); //Crear el server para dar rutas
 
-const { registerUser, loginUser, cambiarContrasena } = require("../controllers/userController");
+const { registerUser, loginUser, cambiarContrasena, recuperarContrasena } = require("../controllers/userController");
 
 const router = express.Router(); // Crear un enrutador y para definir las rutas
 
@@ -8,5 +8,6 @@ const router = express.Router(); // Crear un enrutador y para definir las rutas
 router.post("/registrarUsuario", registerUser); //Registrar usuario
 router.post("/iniciarSesion", loginUser); //Iniciar sesión
 router.post("/cambiar-contrasena", cambiarContrasena); //Cambiar contraseña
+router.post("/recuperarContrasena", recuperarContrasena); //Recuperar contraseña
 
 module.exports = router;

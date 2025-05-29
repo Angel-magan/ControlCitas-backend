@@ -1,4 +1,5 @@
 const express = require("express");
+const pacienteController = require("../controllers/pacienteController");
 
 const {
   getEspecialidades,
@@ -33,5 +34,6 @@ router.get("/expediente/:id_paciente", getExpedientePorPaciente);
 router.get("/contactos", getContactosPaciente);
 router.post("/contactos", agregarContactoPaciente);
 router.delete("/contactos/:id_contacto", eliminarContactoPaciente);
+router.get("/datos", pacienteController.getDatosPaciente);
 
 module.exports = router;
