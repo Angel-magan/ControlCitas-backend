@@ -123,14 +123,50 @@ exports.cambiarEstadoMedico = (req, res) => {
 exports.editarMedico = (req, res) => {
     const { id_medico } = req.params;
     const { id_especialidad, licencia_medica, num_identificacion, activo } = req.body;
+
+    // Validación de campos obligatorios
+    if (!id_especialidad || !licencia_medica || !num_identificacion || activo === undefined) {
+        return res.status(400).json({ message: "Todos los campos son obligatorios" });
+    }
+
+    // Validar formato de DUI
+    const duiRegex = /^\d{8}-\d{1}$/;
+    if (!duiRegex.test(num_identificacion)) {
+        return res.status(400).json({ message: "DUI inválido. Formato: 00000000-1" });
+    }
+
+    // Validar formato de licencia médica
+    const licenciaRegex = /^J\.V\.P\.M-\d{5}$/;
+    if (!licenciaRegex.test(licencia_medica)) {
+        return res.status(400).json({ message: "Licencia médica inválida. Formato: J.V.P.M-12345" });
+    }
+
+    // Validar unicidad de DUI y licencia médica (excluyendo el propio médico)
     db.query(
-        "UPDATE medico SET id_especialidad=?, licencia_medica=?, num_identificacion=?, activo=? WHERE id_medico=?",
-        [id_especialidad, licencia_medica, num_identificacion, activo, id_medico],
-        (err) => {
-            if (err) {
-                return res.status(500).json({ message: "Error al editar médico" });
+        "SELECT * FROM medico WHERE (num_identificacion = ? OR licencia_medica = ?) AND id_medico != ?",
+        [num_identificacion, licencia_medica, id_medico],
+        (err, results) => {
+            if (err) return res.status(500).json({ message: "Error en la base de datos" });
+            if (results.length > 0) {
+                if (results.some(m => m.num_identificacion === num_identificacion)) {
+                    return res.status(400).json({ message: "El DUI ya está registrado por otro médico" });
+                }
+                if (results.some(m => m.licencia_medica === licencia_medica)) {
+                    return res.status(400).json({ message: "La licencia médica ya está registrada por otro médico" });
+                }
             }
-            res.json({ message: "Médico actualizado correctamente" });
+
+            // Actualizar médico
+            db.query(
+                "UPDATE medico SET id_especialidad=?, licencia_medica=?, num_identificacion=?, activo=? WHERE id_medico=?",
+                [id_especialidad, licencia_medica, num_identificacion, activo, id_medico],
+                (err2) => {
+                    if (err2) {
+                        return res.status(500).json({ message: "Error al editar médico" });
+                    }
+                    res.json({ message: "Médico actualizado correctamente" });
+                }
+            );
         }
     );
 };
