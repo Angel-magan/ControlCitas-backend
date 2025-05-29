@@ -3,7 +3,7 @@ const bcrypt = require("bcryptjs"); // Al inicio del archivo
 const nodemailer = require("nodemailer"); // Agrega esto al inicio del archivo
 const frontendHost = process.env.DB_HOST || "localhost";
 const frontendPort = process.env.PORT || "5173";
-const frontendUrl = `http://${frontendHost}:${frontendPort}/`; //Url para el login del correo
+const frontendUrl = `https://controlcitas-frontend-production.up.railway.app/`; //Url para el login del correo
 
 // Listar todos los usuarios
 exports.getUsuarios = (req, res) => {
@@ -482,7 +482,7 @@ exports.reporteCitasPorEspecialidad = (req, res) => {
 exports.buscarPacientes = (req, res) => {
     const { q } = req.query;
     db.query(
-        `SELECT p.id_paciente, u.nombres, u.apellidos, u.correo, u.telefono, u.direccion
+        `SELECT p.id_paciente, u.nombres, u.apellidos, p.fechaNacimiento, u.correo, u.telefono, u.direccion
         FROM paciente p
         JOIN usuario u ON p.id_usuario = u.id_usuario
         WHERE u.nombres LIKE ? OR u.apellidos LIKE ? OR u.correo LIKE ?
